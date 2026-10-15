@@ -1,0 +1,42 @@
+# Gradle / build
+.gradle/
+build/
+app/build/
+.kotlin/
+*.apk
+*.aab
+*.log
+
+# Lokale configuratie (bevat paden of geheimen)
+local.properties
+*.properties.local
+
+# Ondertekening: NOOIT committen (zie README, hoofdstuk "Ondertekening")
+signing/
+*.jks
+*.keystore
+keystore.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Persoonlijke gegevens en back-ups
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+GameGraph-backup-*.json
+backups/
+
+# Tokens en geheimen
+.env
+*.pem
+secrets*
+
+# Claude Code: lokale instellingen/skills per computer
+.claude/settings.local.json
+.agents/
+skills-lock.json

@@ -1,0 +1,145 @@
+name: Build en release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Bouwen en testen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Gradle-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle.kts', 'gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Unit tests en lint
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug
+
+      - name: Test- en lintrapporten
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rapporten
+          path: |
+            app/build/reports/tests/
+            app/build/reports/lint-results-debug.html
+
+  release:
+    name: Release-APK en GitHub Release
+    # Alleen bij een versietag zoals v1.0.0.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      KEYSTORE_BASE64: ${{ secrets.GAMEGRAPH_KEYSTORE_BASE64 }}
+      GAMEGRAPH_KEYSTORE_PASSWORD: ${{ secrets.GAMEGRAPH_KEYSTORE_PASSWORD }}
+      GAMEGRAPH_KEY_ALIAS: ${{ secrets.GAMEGRAPH_KEY_ALIAS }}
+      GAMEGRAPH_KEY_PASSWORD: ${{ secrets.GAMEGRAPH_KEY_PASSWORD }}
+    steps:
+      - name: Controleer of de ondertekening is ingesteld
+        run: |
+          missing=""
+          [ -z "$KEYSTORE_BASE64" ] && missing="$missing GAMEGRAPH_KEYSTORE_BASE64"
+          [ -z "$GAMEGRAPH_KEYSTORE_PASSWORD" ] && missing="$missing GAMEGRAPH_KEYSTORE_PASSWORD"
+          [ -z "$GAMEGRAPH_KEY_ALIAS" ] && missing="$missing GAMEGRAPH_KEY_ALIAS"
+          [ -z "$GAMEGRAPH_KEY_PASSWORD" ] && missing="$missing GAMEGRAPH_KEY_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error title=Release-ondertekening ontbreekt::Voeg deze repository secrets toe (zie RELEASING.md):$missing"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Controleer dat de tag bij de appversie past
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          name=$(grep '^versionName=' version.properties | cut -d= -f2 | tr -d '\r ')
+          code=$(grep '^versionCode=' version.properties | cut -d= -f2 | tr -d '\r ')
+          if [ "$tag" != "$name" ]; then
+            echo "::error title=Versie komt niet overeen::Tag $GITHUB_REF_NAME past niet bij versionName=$name in version.properties"
+            exit 1
+          fi
+          echo "VERSION_NAME=$name" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$code" >> "$GITHUB_ENV"
+
+      - name: Keystore klaarzetten (buiten de werkmap, wordt nooit geüpload)
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/gamegraph-release.jks"
+          echo "GAMEGRAPH_KEYSTORE_FILE=$RUNNER_TEMP/gamegraph-release.jks" >> "$GITHUB_ENV"
+
+      - name: Release-APK bouwen
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon :app:assembleRelease
+
+      - name: APK, checksum en manifest samenstellen
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/GameGraph-${VERSION_NAME}.apk"
+          cd dist
+          sha=$(sha256sum "GameGraph-${VERSION_NAME}.apk" | cut -d' ' -f1)
+          size=$(stat -c %s "GameGraph-${VERSION_NAME}.apk")
+          echo "$sha  GameGraph-${VERSION_NAME}.apk" > "GameGraph-${VERSION_NAME}.apk.sha256"
+          cat > gamegraph-release.json <<EOF
+          {
+            "versionCode": ${VERSION_CODE},
+            "versionName": "${VERSION_NAME}",
+            "apk": "GameGraph-${VERSION_NAME}.apk",
+            "sha256": "${sha}",
+            "size": ${size},
+            "package": "nl.gamegraph.app"
+          }
+          EOF
+
+      - name: Alleen de releasebestanden bewaren als artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GameGraph-release
+          path: dist/
+          if-no-files-found: error
+
+      - name: GitHub Release aanmaken
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=""
+          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "GameGraph $VERSION_NAME" \
+            --notes "versionCode: $VERSION_CODE" \
+            $prerelease

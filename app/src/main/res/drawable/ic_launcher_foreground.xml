@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Drie verbonden knooppunten: het netwerk van games -->
+    <path
+        android:strokeColor="#8B5CF6"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M38,66 L54,40 L72,64 M38,66 L72,64" />
+    <path android:fillColor="#8B5CF6" android:pathData="M38,66m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0" />
+    <path android:fillColor="#3B82F6" android:pathData="M54,40m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0" />
+    <path android:fillColor="#F2F2FF" android:pathData="M72,64m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0" />
+</vector>
